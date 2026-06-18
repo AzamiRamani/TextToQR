@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <link rel="icon" href="icon.jpg">
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Text → QR Splitter</title>
+<title>Text to QR Splitter</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -209,7 +210,7 @@
 
   .qr-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 1rem;
   }
 
@@ -252,10 +253,10 @@
     border-radius: var(--radius);
     padding: 10px;
     border: 1px solid var(--border);
-    min-height: 210px;
+    min-height: 320px;
   }
 
-  .qr-canvas-wrap canvas { display: block; }
+  .qr-canvas-wrap canvas { display: block; width: 100%; height: auto; }
 
   .qr-preview {
     font-size: 11px;
@@ -294,9 +295,9 @@
 <div class="page">
 
   <header>
-    <div class="wordmark">QR Splitter</div>
-    <h1>Text <span>&#8594;</span> QR codes</h1>
-    <p class="subtitle">Paste long text and split it into scannable QR codes &mdash; paragraphs are never cut in the middle.</p>
+    <h1>Text to QR codes</h1>
+    <p class="subtitle">Automatically cuts long texts into QR codes, will not cut your paragraphs mid-way.</p>
+    <p class="subtitle">Ensure your paragraphing is accurate for best results.</p>
   </header>
 
   <div class="card">
@@ -311,11 +312,7 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="17" width="3" height="3"/><rect x="19" y="14" width="3" height="3"/><rect x="19" y="19" width="3" height="3"/></svg>
         Generate QR codes
       </button>
-      <button class="btn btn-ghost" id="downloadBtn" onclick="downloadAll()" style="display:none;">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download all
-      </button>
-      <p class="hint">Tip: Ctrl + Enter to generate</p>
+
     </div>
   </div>
 
@@ -792,23 +789,31 @@ function renderQR(text, canvasEl, size) {
   qr.make();
 
   var count = qr.getModuleCount();
-  var cell = Math.floor(size / (count + 8));
-  if (cell < 1) cell = 1;
-  var margin = Math.floor((size - cell * count) / 2);
 
+  // Step 1: draw at native 1px-per-module onto a small offscreen canvas
+  var raw = document.createElement('canvas');
+  raw.width = count;
+  raw.height = count;
+  var rctx = raw.getContext('2d');
+  rctx.fillStyle = '#ffffff';
+  rctx.fillRect(0, 0, count, count);
+  rctx.fillStyle = '#000000';
+  for (var row = 0; row < count; row++) {
+    for (var col = 0; col < count; col++) {
+      if (qr.isDark(row, col)) rctx.fillRect(col, row, 1, 1);
+    }
+  }
+
+  // Step 2: scale up to the target size with a fixed quiet-zone margin
+  var margin = Math.round(size * 0.04);
+  var inner = size - margin * 2;
   canvasEl.width = size;
   canvasEl.height = size;
   var ctx = canvasEl.getContext('2d');
+  ctx.imageSmoothingEnabled = false; // keep pixels crisp
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = '#000000';
-  for (var row = 0; row < count; row++) {
-    for (var col = 0; col < count; col++) {
-      if (qr.isDark(row, col)) {
-        ctx.fillRect(margin + col * cell, margin + row * cell, cell, cell);
-      }
-    }
-  }
+  ctx.drawImage(raw, margin, margin, inner, inner);
 }
 
 // ─── Main generate ────────────────────────────────────────────────────────
@@ -823,7 +828,6 @@ function generate() {
     document.getElementById('emptyState').innerHTML = '<div class="empty-icon">&#9638;</div><div>Please enter some text first.</div>';
     document.getElementById('outputHeader').style.display = 'none';
     document.getElementById('stats').style.display = 'none';
-    document.getElementById('downloadBtn').style.display = 'none';
     return;
   }
 
@@ -835,7 +839,6 @@ function generate() {
   document.getElementById('statCodes').textContent = chunks.length;
   document.getElementById('statParas').textContent = paragraphs.length;
   document.getElementById('stats').style.display = 'grid';
-  document.getElementById('downloadBtn').style.display = chunks.length > 0 ? 'inline-flex' : 'none';
   document.getElementById('outputHeader').style.display = 'flex';
   document.getElementById('outputTitle').textContent = chunks.length + ' QR code' + (chunks.length !== 1 ? 's' : '') + ' generated';
 
@@ -858,22 +861,15 @@ function generate() {
     preview.className = 'qr-preview';
     preview.textContent = chunk.substring(0, 110) + (chunk.length > 110 ? '...' : '');
 
-    var dlBtn = document.createElement('button');
-    dlBtn.className = 'btn btn-ghost btn-sm';
-    dlBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download';
-    dlBtn.setAttribute('data-idx', idx);
-    dlBtn.onclick = function() { downloadOne(parseInt(this.getAttribute('data-idx'))); };
-
     card.appendChild(header);
     card.appendChild(qrWrap);
     card.appendChild(preview);
-    card.appendChild(dlBtn);
     output.appendChild(card);
 
     setTimeout(function(c, cv) {
       return function() {
         try {
-          renderQR(c, cv, 200);
+          renderQR(c, cv, 300);
         } catch(e) {
           cv.parentNode.innerHTML = '<div style="font-size:12px;color:#c0392b;padding:10px;text-align:center;">Error: ' + e.message + '</div>';
         }
@@ -882,29 +878,6 @@ function generate() {
   });
 }
 
-function downloadOne(idx) {
-  var wrap = document.getElementById('qr-' + idx);
-  var canvas = wrap && wrap.querySelector('canvas');
-  if (!canvas) return;
-  var link = document.createElement('a');
-  link.download = 'qr-chunk-' + (idx + 1) + '.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-}
-
-function downloadAll() {
-  var cards = document.querySelectorAll('[id^="qr-"]');
-  cards.forEach(function(wrap, idx) {
-    var canvas = wrap.querySelector('canvas');
-    if (!canvas) return;
-    setTimeout(function() {
-      var link = document.createElement('a');
-      link.download = 'qr-chunk-' + (idx + 1) + '.png';
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    }, idx * 200);
-  });
-}
 
 document.getElementById('inputText').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && e.ctrlKey) generate();
